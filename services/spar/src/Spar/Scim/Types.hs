@@ -49,7 +49,7 @@ import Control.Monad.Except (throwError)
 import qualified Data.Aeson as Aeson
 import qualified Data.CaseInsensitive as CI
 import Data.Handle (Handle)
-import Data.Id (ScimTokenId, UserId)
+import Data.Id (ScimTokenId, TeamId, UserId)
 import qualified Data.Map as Map
 import Data.Misc (PlainTextPassword)
 import Imports
@@ -200,7 +200,7 @@ instance Scim.Patchable ScimUserExtra where
 -- and/or ignore POSTed content, returning the full representation can be useful to the
 -- client, enabling it to correlate the client's and server's views of the new resource."
 data ValidScimUser = ValidScimUser
-  { _vsuExternalId :: ValidExternalId,
+  { _vsuAuthId :: AuthId,
     _vsuHandle :: Handle,
     _vsuName :: BT.Name,
     _vsuRichInfo :: RI.RichInfo,
@@ -208,35 +208,47 @@ data ValidScimUser = ValidScimUser
   }
   deriving (Eq, Show)
 
-data ValidExternalId
-  = EmailAndUref Email SAML.UserRef
-  | UrefOnly SAML.UserRef
-  | EmailOnly Email
-  deriving (Eq, Show, Generic)
+data AuthId
+  = AuthSAML SAML.UserRef
+  | AuthPass AuthPassDetails
+  | AuthBoth SAML.UserRef AuthPassDetails
+  deriving (Eq, Show)
 
--- | Take apart a 'ValidExternalId', using 'SAML.UserRef' if available, otehrwise 'Email'.
-runValidExternalId :: (SAML.UserRef -> a) -> (Email -> a) -> ValidExternalId -> a
-runValidExternalId doUref doEmail = \case
-  EmailAndUref _ uref -> doUref uref
-  UrefOnly uref -> doUref uref
-  EmailOnly email -> doEmail email
+data AuthPassDetails = AuthPassDetails ExternalId Email EmailSource
+  deriving (Eq, Show)
 
-veidUref :: Prism' ValidExternalId SAML.UserRef
-veidUref = prism' UrefOnly $
+data EmailSource
+  = EmailFromExternalIdField
+  | EmailFromEmailField
+  deriving (Eq, Show)
+
+data ExternalId
+  = ExternalId TeamId Text
+  deriving (Eq, Show)
+
+-- | Take apart a 'Auth', using 'SAML.UserRef' if available, otehrwise 'Email'.
+runAuthId :: (SAML.UserRef -> a) -> (Email -> a) -> AuthId -> a
+runAuthId doUref doEmail = \case
+  AuthSAML uref -> doUref uref
+  AuthPass (AuthPassDetails _ email _) -> doEmail email
+  AuthBoth uref _ -> doUref uref
+
+authIdUref :: Prism' AuthId SAML.UserRef
+authIdUref = prism' AuthSAML $
   \case
-    EmailAndUref _ uref -> Just uref
-    UrefOnly uref -> Just uref
-    EmailOnly _ -> Nothing
+    AuthSAML uref -> Just uref
+    AuthPass (AuthPassDetails _ _ _) -> Nothing
+    AuthBoth uref _ -> Just uref
 
-veidEmail :: Prism' ValidExternalId Email
-veidEmail = prism' EmailOnly $
+authIdEmail :: AuthId -> Maybe Email
+authIdEmail =
   \case
-    EmailAndUref email _ -> Just email
-    UrefOnly _ -> Nothing
-    EmailOnly email -> Just email
+    AuthSAML _ -> Nothing
+    AuthPass (AuthPassDetails _ email _) -> Just email
+    AuthBoth _ (AuthPassDetails _ email _) -> Just email
 
 makeLenses ''ValidScimUser
-makeLenses ''ValidExternalId
+makeLenses ''AuthId
 
 scimActiveFlagFromAccountStatus :: AccountStatus -> Bool
 scimActiveFlagFromAccountStatus = \case

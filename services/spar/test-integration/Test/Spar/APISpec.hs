@@ -414,7 +414,7 @@ specBindingUsers = describe "binding existing users to sso identities" $ do
         getSsoidViaAuthResp aresp = do
           parsed :: AuthnResponse <-
             either error pure . parseFromDocument $ fromSignedAuthnResponse aresp
-          either error (pure . Intra.veidToUserSSOId . UrefOnly) $ getUserRef parsed
+          either error (pure . Intra.authIdToUserSSOId . AuthSAML) $ getUserRef parsed
         initialBind :: HasCallStack => UserId -> IdP -> SignPrivCreds -> TestSpar (NameID, SignedAuthnResponse, ResponseLBS)
         initialBind = initialBind' Just
         initialBind' ::
@@ -1097,7 +1097,7 @@ specScimAndSAML = do
     userid' <- getUserIdViaRef' userref
     liftIO $ ('i', userid') `shouldBe` ('i', Just userid)
     userssoid <- getSsoidViaSelf' userid
-    liftIO $ ('r', preview veidUref <$$> (Intra.veidFromUserSSOId <$> userssoid)) `shouldBe` ('r', Just (Right (Just userref)))
+    liftIO $ ('r', preview authIdUref <$$> (Intra.authIdFromUserSSOId <$> userssoid)) `shouldBe` ('r', Just (Right (Just userref)))
     -- login a user for the first time with the scim-supplied credentials
     authnreq <- negotiateAuthnRequest idp
     spmeta <- getTestSPMetadata

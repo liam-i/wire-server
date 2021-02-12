@@ -178,7 +178,7 @@ import qualified Spar.Data as Data
 import qualified Spar.Intra.Brig as Intra
 import qualified Spar.Options
 import Spar.Run
-import Spar.Scim.Types (runValidExternalId)
+import Spar.Scim.Types (runAuthId)
 import Spar.Types
 import qualified System.Logger.Extended as Log
 import System.Random (randomRIO)
@@ -1125,12 +1125,12 @@ callDeleteDefaultSsoCode sparreq_ = do
 -- | Look up 'UserId' under 'UserSSOId' on spar's cassandra directly.
 ssoToUidSpar :: (HasCallStack, MonadIO m, MonadReader TestEnv m) => Brig.UserSSOId -> m (Maybe UserId)
 ssoToUidSpar ssoid = do
-  veid <- either (error . ("could not parse brig sso_id: " <>)) pure $ Intra.veidFromUserSSOId ssoid
+  authId <- either (error . ("could not parse brig sso_id: " <>)) pure $ Intra.authIdFromUserSSOId ssoid
   runSparCass @Client $
-    runValidExternalId
+    runAuthId
       Data.getSAMLUser
       Data.lookupScimExternalId
-      veid
+      authId
 
 runSparCass ::
   (HasCallStack, m ~ Client, MonadIO m', MonadReader TestEnv m') =>

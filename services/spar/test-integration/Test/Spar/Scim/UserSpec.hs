@@ -738,7 +738,7 @@ testFindSamlAutoProvisionedUserMigratedWithEmailInTeamWithSSO = do
     runSpar $ Intra.setBrigUserHandle uid handle
     pure usr
   let memberIdWithSSO = userId memberWithSSO
-      externalId = either error id $ veidToText =<< Intra.veidFromBrigUser memberWithSSO Nothing
+      externalId = either error id $ authIdToText =<< Intra.authIdFromBrigUser memberWithSSO Nothing
 
   -- NOTE: once SCIM is enabled, SSO auto-provisioning is disabled
   tok <- registerScimToken teamid (Just (idp ^. SAML.idpId))
@@ -749,12 +749,11 @@ testFindSamlAutoProvisionedUserMigratedWithEmailInTeamWithSSO = do
   Just brigUser' <- runSpar $ Intra.getBrigUser Intra.NoPendingInvitations memberIdWithSSO
   liftIO $ userManagedBy brigUser' `shouldBe` ManagedByScim
   where
-    veidToText :: MonadError String m => ValidExternalId -> m Text
-    veidToText veid =
-      runValidExternalId
+    authIdToText :: MonadError String m => AuthId -> m Text
+    authIdToText =
+      runAuthId
         (\(SAML.UserRef _ subj) -> maybe (throwError "bad uref from brig") pure $ SAML.shortShowNameID subj)
         (pure . fromEmail)
-        veid
 
 testFindTeamSettingsInvitedUserMigratedWithEmailInTeamWithSSO :: TestSpar ()
 testFindTeamSettingsInvitedUserMigratedWithEmailInTeamWithSSO = do
@@ -1200,8 +1199,8 @@ testUpdateExternalId withidp = do
         user <- randomScimUser <&> \u -> u {Scim.User.externalId = Just $ fromEmail email}
         storedUser <- createUser tok user
         let userid = scimUserId storedUser
-        veid :: ValidExternalId <-
-          either (error . show) pure $ mkValidExternalId midp (Scim.User.externalId user)
+        authId :: AuthId <-
+          either (error . show) pure $ mkAuth midp (Scim.User.externalId user)
         -- Overwrite the user with another randomly-generated user (only controlling externalId)
         user' <- do
           otherEmail <- randomEmail
@@ -1213,24 +1212,24 @@ testUpdateExternalId withidp = do
                         else Scim.User.externalId user
                   }
           randomScimUser <&> upd
-        let veid' = either (error . show) id $ mkValidExternalId midp (Scim.User.externalId user')
+        let authId' = either (error . show) id $ mkAuth midp (Scim.User.externalId user')
 
         _ <- updateUser tok userid user'
 
-        muserid <- lookupByValidExternalId veid
-        muserid' <- lookupByValidExternalId veid'
+        muserid <- lookupByValidExternalId authId
+        muserid' <- lookupByValidExternalId authId'
         liftIO $ do
           if hasChanged
             then do
               (hasChanged, muserid) `shouldBe` (hasChanged, Nothing)
               (hasChanged, muserid') `shouldBe` (hasChanged, Just userid)
             else do
-              (hasChanged, veid') `shouldBe` (hasChanged, veid)
+              (hasChanged, authId') `shouldBe` (hasChanged, authId)
               (hasChanged, muserid') `shouldBe` (hasChanged, Just userid)
 
-      lookupByValidExternalId :: ValidExternalId -> TestSpar (Maybe UserId)
+      lookupByValidExternalId :: AuthId -> TestSpar (Maybe UserId)
       lookupByValidExternalId =
-        runValidExternalId
+        runAuthId
           (runSparCass . Data.getSAMLUser)
           ( \email -> do
               let action = SU.scimFindUserByEmail midp tid $ fromEmail email
@@ -1439,8 +1438,8 @@ specDeleteUser = do
       uref :: SAML.UserRef <- do
         usr <- runSpar $ Intra.getBrigUser Intra.WithPendingInvitations uid
         let err = error . ("brig user without UserRef: " <>) . show
-        case (`Intra.veidFromBrigUser` Nothing) <$> usr of
-          bad@(Just (Right veid)) -> runValidExternalId pure (const $ err bad) veid
+        case (`Intra.authIdFromBrigUser` Nothing) <$> usr of
+          bad@(Just (Right authId)) -> runAuthId pure (const $ err bad) authId
           bad -> err bad
       spar <- view teSpar
       deleteUser_ (Just tok) (Just uid) spar
@@ -1606,8 +1605,8 @@ specEmailValidation = do
           (user, email) <- randomScimUserWithEmail
           scimStoredUser <- createUser tok user
           uref :: SAML.UserRef <-
-            either (error . show) (pure . (^?! veidUref)) $
-              mkValidExternalId (Just idp) (Scim.User.externalId . Scim.value . Scim.thing $ scimStoredUser)
+            either (error . show) (pure . (^?! authIdUref)) $
+              mkAuth (Just idp) (Scim.User.externalId . Scim.value . Scim.thing $ scimStoredUser)
           uid :: UserId <-
             getUserIdViaRef uref
           brig <- asks (^. teBrig)
