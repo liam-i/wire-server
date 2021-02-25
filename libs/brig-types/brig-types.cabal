@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: fe16e52e870cb548573366fe9192319004e52c3e4d2ece172df69e408cbe391b
+-- hash: a495f8d8dacbbcd1ab7838ac4bb44f3ec646d5c03f106d9a025b85a9f41d0576
 
 name:           brig-types
 version:        1.35.0
@@ -34,6 +34,7 @@ library
       Brig.Types.Provider.External
       Brig.Types.Provider.Tag
       Brig.Types.Search
+      Brig.Types.SparAuthId
       Brig.Types.Team
       Brig.Types.Team.Invitation
       Brig.Types.Team.LegalHold
@@ -73,6 +74,7 @@ library
     , quickcheck-instances >=0.3.16
     , random
     , safe >=0.3
+    , saml2-web-sso >=0.18
     , scientific >=0.3.4
     , singletons >=2.0
     , string-conversions

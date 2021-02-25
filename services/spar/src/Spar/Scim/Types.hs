@@ -39,21 +39,48 @@
 -- * Our wrappers over @hscim@ types (like 'ValidScimUser').
 -- * Servant-based API types.
 -- * Request and response types for SCIM-related endpoints.
-module Spar.Scim.Types where
+module Spar.Scim.Types
+  ( SparTag,
+    APIScim,
+    APIScimToken,
+    CreateScimToken (..),
+    CreateScimTokenResponse (..),
+    ScimTokenList (..),
+    ValidScimUser (..),
+    WrappedScimUser (..),
+    WrappedScimStoredUser (..),
+    SparAuthId.AuthId (..),
+    ScimSiteAPI,
+    ScimSite (..),
+    SparAuthId.authIdEmail,
+    SparAuthId.runAuthId,
+    SparAuthId.authIdUref,
+    scimActiveFlagFromAccountStatus,
+    scimActiveFlagToAccountStatus,
+    ScimUserExtra (..),
+    sueRichInfo,
+    vsuAuthId,
+    vsuHandle,
+    vsuName,
+    vsuRichInfo,
+    vsuActive,
+    userSchemas,
+  )
+where
 
-import Brig.Types.Common (Email)
 import Brig.Types.Intra (AccountStatus (..))
+import Brig.Types.SparAuthId (AuthId (..))
+import qualified Brig.Types.SparAuthId as SparAuthId
 import qualified Brig.Types.User as BT
-import Control.Lens (Prism', makeLenses, prism')
+import Control.Lens (makeLenses)
 import Control.Monad.Except (throwError)
 import qualified Data.Aeson as Aeson
 import qualified Data.CaseInsensitive as CI
 import Data.Handle (Handle)
-import Data.Id (ScimTokenId, TeamId, UserId)
+import Data.Id (ScimTokenId, UserId)
 import qualified Data.Map as Map
 import Data.Misc (PlainTextPassword)
 import Imports
-import qualified SAML2.WebSSO as SAML
 import SAML2.WebSSO.Test.Arbitrary ()
 import Servant (DeleteNoContent, Get, Header, JSON, Post, QueryParam', ReqBody, Required, Strict, (:<|>), (:>))
 import Servant.API.Generic (ToServantApi, (:-))
@@ -208,47 +235,7 @@ data ValidScimUser = ValidScimUser
   }
   deriving (Eq, Show)
 
-data AuthId
-  = AuthSAML SAML.UserRef
-  | AuthPass AuthPassDetails
-  | AuthBoth SAML.UserRef AuthPassDetails
-  deriving (Eq, Show)
-
-data AuthPassDetails = AuthPassDetails ExternalId Email EmailSource
-  deriving (Eq, Show)
-
-data EmailSource
-  = EmailFromExternalIdField
-  | EmailFromEmailField
-  deriving (Eq, Show)
-
-data ExternalId
-  = ExternalId TeamId Text
-  deriving (Eq, Show)
-
--- | Take apart a 'Auth', using 'SAML.UserRef' if available, otehrwise 'Email'.
-runAuthId :: (SAML.UserRef -> a) -> (Email -> a) -> AuthId -> a
-runAuthId doUref doEmail = \case
-  AuthSAML uref -> doUref uref
-  AuthPass (AuthPassDetails _ email _) -> doEmail email
-  AuthBoth uref _ -> doUref uref
-
-authIdUref :: Prism' AuthId SAML.UserRef
-authIdUref = prism' AuthSAML $
-  \case
-    AuthSAML uref -> Just uref
-    AuthPass (AuthPassDetails _ _ _) -> Nothing
-    AuthBoth uref _ -> Just uref
-
-authIdEmail :: AuthId -> Maybe Email
-authIdEmail =
-  \case
-    AuthSAML _ -> Nothing
-    AuthPass (AuthPassDetails _ email _) -> Just email
-    AuthBoth _ (AuthPassDetails _ email _) -> Just email
-
 makeLenses ''ValidScimUser
-makeLenses ''AuthId
 
 scimActiveFlagFromAccountStatus :: AccountStatus -> Bool
 scimActiveFlagFromAccountStatus = \case
