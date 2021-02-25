@@ -1605,7 +1605,7 @@ specEmailValidation = do
           (user, email) <- randomScimUserWithEmail
           scimStoredUser <- createUser tok user
           uref :: SAML.UserRef <-
-            either (error . show) (pure . (^?! authIdUref)) $
+            either (error . show) (maybe (error "no uref") pure . authIdUref) $
               mkAuth (Just idp) (Scim.User.externalId . Scim.value . Scim.thing $ scimStoredUser)
           uid :: UserId <-
             getUserIdViaRef uref

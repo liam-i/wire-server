@@ -546,8 +546,8 @@ instance IsUser ValidScimUser where
   maybeUserId = Nothing
   maybeHandle = Just (Just . view vsuHandle)
   maybeName = Just (Just . view vsuName)
-  maybeTenant = Just (^? (vsuAuthId . authIdUref . SAML.uidTenant))
-  maybeSubject = Just (^? (vsuAuthId . authIdUref . SAML.uidSubject))
+  maybeTenant = Just (fmap (^. SAML.uidTenant) . (authIdUref . (^. vsuAuthId)))
+  maybeSubject = Just (fmap (^. SAML.uidSubject) . (authIdUref . (^. vsuAuthId)))
   maybeScimExternalId = Just (runAuthId Intra.urefToExternalId (Just . fromEmail) . view vsuAuthId)
 
 instance IsUser (WrappedScimStoredUser SparTag) where
@@ -577,12 +577,12 @@ instance IsUser User where
     Intra.authIdFromBrigUser usr Nothing
       & either
         (const Nothing)
-        (preview (authIdUref . SAML.uidTenant))
+        (fmap (^. SAML.uidTenant) . authIdUref)
   maybeSubject = Just $ \usr ->
     Intra.authIdFromBrigUser usr Nothing
       & either
         (const Nothing)
-        (preview (authIdUref . SAML.uidSubject))
+        (fmap (^. SAML.uidSubject) . authIdUref)
   maybeScimExternalId = Just $ \usr ->
     Intra.authIdFromBrigUser usr Nothing
       & either

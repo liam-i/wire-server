@@ -52,7 +52,7 @@ module Spar.Scim.Types
     SparAuthId.AuthId (..),
     ScimSiteAPI,
     ScimSite (..),
-    SparAuthId.authIdEmail,
+    SparAuthId.authIdSCIMEmail,
     SparAuthId.runAuthId,
     SparAuthId.authIdUref,
     scimActiveFlagFromAccountStatus,

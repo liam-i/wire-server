@@ -326,7 +326,7 @@ logEmail email =
 
 logVSU :: ST.ValidScimUser -> (Msg -> Msg)
 logVSU (ST.ValidScimUser authId handl _name _richInfo _active) =
-  maybe id logEmail (ST.authIdEmail authId)
+  maybe id logEmail (ST.authIdSCIMEmail authId)
     . logHandle handl
 
 logTokenInfo :: ScimTokenInfo -> (Msg -> Msg)
@@ -666,7 +666,7 @@ synthesizeStoredUser usr authId =
         . logUser (userId . accountUser $ usr)
         . maybe id logHandle (userHandle . accountUser $ usr)
         . maybe id logTeam (userTeam . accountUser $ usr)
-        . maybe id logEmail (ST.authIdEmail authId)
+        . maybe id logEmail (ST.authIdSCIMEmail authId)
     )
     $ do
       let uid = userId (accountUser usr)

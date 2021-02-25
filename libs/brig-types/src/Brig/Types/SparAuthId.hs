@@ -20,7 +20,7 @@ import qualified SAML2.WebSSO as SAML
 import Wire.API.User.Identity
 
 data AuthId
-  = AuthSAML TeamId SAML.UserRef
+  = AuthSAML SAML.UserRef
   | AuthSCIM ScimDetails
   | AuthBoth TeamId SAML.UserRef (Maybe EmailWithSource) -- userref and externalid are iso. Both DB indices (SAMLUserRef index and ExternalId index) are kept in sync
   deriving (Eq, Show)
@@ -43,31 +43,34 @@ data ScimDetails = ScimDetails ExternalId EmailWithSource
 -- | Take apart a 'AuthId', using 'SAML.UserRef' if available, otherwise 'Email'.
 runAuthId :: (SAML.UserRef -> a) -> (Email -> a) -> AuthId -> a
 runAuthId doUref doEmail = \case
-  AuthSAML _ uref -> doUref uref
+  AuthSAML uref -> doUref uref
   AuthSCIM (ScimDetails _ (EmailWithSource email _)) -> doEmail email
   AuthBoth _tid uref _ -> doUref uref
 
 authIdUref :: AuthId -> Maybe SAML.UserRef
 authIdUref =
   \case
-    AuthSAML _ uref -> Just uref
+    AuthSAML uref -> Just uref
     AuthSCIM _ -> Nothing
     AuthBoth _ uref _ -> Just uref
 
 authIdExternalId :: AuthId -> Maybe ExternalId
 authIdExternalId =
   \case
-    AuthSAML tid uref -> ExternalId tid <$> urefToExternalId uref
+    AuthSAML _ -> Nothing
     AuthSCIM (ScimDetails extId _) -> Just extId
     AuthBoth tid uref _ -> ExternalId tid <$> urefToExternalId uref
   where
     urefToExternalId :: SAML.UserRef -> Maybe Text
     urefToExternalId = SAML.shortShowNameID . view SAML.uidSubject
 
-authIdSCIMEmail :: AuthId -> Maybe EmailWithSource
-authIdSCIMEmail =
+authIdSCIMEmail :: AuthId -> Maybe Email
+authIdSCIMEmail = fmap ewsEmail . authIdSCIMEmailWithSource
+
+authIdSCIMEmailWithSource :: AuthId -> Maybe EmailWithSource
+authIdSCIMEmailWithSource =
   \case
-    AuthSAML _ _ -> Nothing
+    AuthSAML _ -> Nothing
     AuthSCIM (ScimDetails _ ews) -> Just ews
     AuthBoth _ _ mbEws -> mbEws
 
