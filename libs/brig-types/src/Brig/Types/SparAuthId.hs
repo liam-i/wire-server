@@ -6,23 +6,26 @@ module Brig.Types.SparAuthId
     ExternalId (..),
     runAuthId,
     authIdUref,
+    authIdExternalId,
+    authIdSCIMEmail,
   )
 where
 
 import Control.Lens
 import Data.Id
+-- import Data.String.Conversions (cs)
 import Imports
 import qualified SAML2.WebSSO as SAML
+-- import qualified Text.Email.Parser
 import Wire.API.User.Identity
 
 data AuthId
-  = AuthSAML SAML.UserRef
+  = AuthSAML TeamId SAML.UserRef
   | AuthSCIM ScimDetails
   | AuthBoth TeamId SAML.UserRef (Maybe EmailWithSource) -- userref and externalid are iso. Both DB indices (SAMLUserRef index and ExternalId index) are kept in sync
   deriving (Eq, Show)
 
-data EmailWithSource
-  = EmailWithSource Email EmailSource
+data EmailWithSource = EmailWithSource {ewsEmail :: Email, ewsEmailSource :: EmailSource}
   deriving (Eq, Show)
 
 data EmailSource
@@ -40,45 +43,50 @@ data ScimDetails = ScimDetails ExternalId EmailWithSource
 -- | Take apart a 'AuthId', using 'SAML.UserRef' if available, otherwise 'Email'.
 runAuthId :: (SAML.UserRef -> a) -> (Email -> a) -> AuthId -> a
 runAuthId doUref doEmail = \case
-  AuthSAML uref -> doUref uref
+  AuthSAML _ uref -> doUref uref
   AuthSCIM (ScimDetails _ (EmailWithSource email _)) -> doEmail email
   AuthBoth _tid uref _ -> doUref uref
 
--- samlToExtId :: TeamId -> SAML.UserRef -> ExternalId
--- samlToExtId = undefined
-
--- getScimDetails :: AuthId -> Maybe ScimDetails
--- getScimDetails = error "Brig.Types.SparAuthId.getScimDetails"
-
--- getScimEmail :: AuthId -> Maybe Email
--- getScimEmail (AuthSAML _) = Nothing
--- getScimEmail (AuthSCIM _) = Nothing
-
--- getScimDetails (AuthSAML _uref) = Nothing
--- getScimDetails (AuthSCIM d) = Just d
--- getScimDetails (AuthBoth _tid _uref Nothing) = Nothing
--- getScimDetails (AuthBoth tid uref (Just ews)) = Just $ ScimDetails (samlToExtId tid uref) ews
-
--- setScimDetails :: ScimDetails -> AuthId -> AuthId
--- setScimDetails d (AuthSAML uref) = AuthSAML uref
--- setScimDetails d (AuthSCIM _) = AuthSCIM d
--- setScimDetails (ScimDetails extId (Just ews)) (AuthBoth tid uref mbEmailSource) = error "TODO"
--- setScimDetails (ScimDetails extId Nothing) (AuthBoth tid uref mbEmailSource) = error "TODO"
-
-authIdUref :: Prism' AuthId SAML.UserRef
-authIdUref = prism' AuthSAML $
+authIdUref :: AuthId -> Maybe SAML.UserRef
+authIdUref =
   \case
-    AuthSAML uref -> Just uref
+    AuthSAML _ uref -> Just uref
     AuthSCIM _ -> Nothing
     AuthBoth _ uref _ -> Just uref
 
+authIdExternalId :: AuthId -> Maybe ExternalId
+authIdExternalId =
+  \case
+    AuthSAML tid uref -> ExternalId tid <$> urefToExternalId uref
+    AuthSCIM (ScimDetails extId _) -> Just extId
+    AuthBoth tid uref _ -> ExternalId tid <$> urefToExternalId uref
+  where
+    urefToExternalId :: SAML.UserRef -> Maybe Text
+    urefToExternalId = SAML.shortShowNameID . view SAML.uidSubject
+
+authIdSCIMEmail :: AuthId -> Maybe EmailWithSource
+authIdSCIMEmail =
+  \case
+    AuthSAML _ _ -> Nothing
+    AuthSCIM (ScimDetails _ ews) -> Just ews
+    AuthBoth _ _ mbEws -> mbEws
+
+-- TODO: Do we need this?
 -- authIdEmail :: AuthId -> Maybe Email
 -- authIdEmail =
 --   \case
---     AuthSAML _ -> Nothing
---     AuthSCIM (ScimDetails _ mbes) -> emailFromSource mbes
---     AuthBoth _ uref mbes) -> Just email
+--     AuthSAML _ uref -> urefToEmail uref
+--     AuthSCIM (ScimDetails _ (EmailWithSource email _)) -> Just email
+--     AuthBoth _ uref mbEws ->
+--       urefToEmail uref <|> (ewsEmail <$> mbEws)
 --   where
---     emailFromSource :: Maybe EmailWithSource -> Maybe Email
---     emailFromSource (Just (EmailWithSource email _)) = Just email
---     emailFromSource Nothing = Nothing
+--     urefToEmail :: SAML.UserRef -> Maybe Email
+--     urefToEmail uref = case uref ^. SAML.uidSubject . SAML.nameID of
+--       SAML.UNameIDEmail email -> Just $ emailFromSAML email
+--       _ -> Nothing
+
+--     emailFromSAML :: HasCallStack => SAML.Email -> Email
+--     emailFromSAML =
+--       fromJust . parseEmail . cs
+--         . Text.Email.Parser.toByteString
+--         . SAML.fromEmail

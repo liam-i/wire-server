@@ -29,6 +29,7 @@ library:
   - containers >=0.5
   - currency-codes >=2.0
   - errors >=1.4
+  - email-validate
   - extra
   - hashable
   - iproute >=1.5
