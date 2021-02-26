@@ -97,8 +97,9 @@ authIdToUserSSOId = runAuthId urefToUserSSOId (UserScimExternalId . fromEmail)
 urefToUserSSOId :: SAML.UserRef -> UserSSOId
 urefToUserSSOId (SAML.UserRef t s) = UserSSOId (cs $ SAML.encodeElem t) (cs $ SAML.encodeElem s)
 
--- | This type deserializes from serialized UserSSOId
+-- | This type deserializes previously serialized UserSSOId values
 -- You can use 'resolveAuthIdPartial' to resolve it to an 'AuthId'
+-- FUTUREWORK: resolve all 'AuthIdPartial' to 'AuthId' in the DB and remove this type
 data AuthIdPartial
   = AuthSAMLPartial SAML.UserRef AuthId
   | AuthSCIMPartial Email (TeamId -> AuthId)
