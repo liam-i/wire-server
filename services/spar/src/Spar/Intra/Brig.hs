@@ -19,12 +19,13 @@
 
 -- | Client functions for interacting with the Brig API.
 module Spar.Intra.Brig
-  ( authIdToUserSSOId,
+  ( AuthIdPartial (..),
+    authIdToUserSSOId,
     urefToExternalId,
-    parseUserRef,
     urefToEmail,
     authIdFromBrigUser,
     authIdFromUserSSOId,
+    authIdPartialToUserSSOId,
     mkUserName,
     renderAuth,
     emailFromSAML,
@@ -68,6 +69,7 @@ import Brig.Types.User
 import Brig.Types.User.Auth (SsoLogin (..))
 import Control.Lens
 import Control.Monad.Except
+import Data.Aeson (FromJSON (..))
 import Data.ByteString.Conversion
 import Data.Handle (Handle (Handle, fromHandle))
 import Data.Id (Id (Id), TeamId, UserId)
@@ -95,26 +97,62 @@ authIdToUserSSOId = runAuthId urefToUserSSOId (UserScimExternalId . fromEmail)
 urefToUserSSOId :: SAML.UserRef -> UserSSOId
 urefToUserSSOId (SAML.UserRef t s) = UserSSOId (cs $ SAML.encodeElem t) (cs $ SAML.encodeElem s)
 
--- Can be used create AuthId without a TeamId
-parseUserRef :: MonadError String m => Text -> Text -> m SAML.UserRef
-parseUserRef tenant subject =
-  case (SAML.decodeElem $ cs tenant, SAML.decodeElem $ cs subject) of
-    (Right t, Right s) -> pure $ SAML.UserRef t s
-    (Left msg, _) -> throwError msg
-    (_, Left msg) -> throwError msg
+-- | This type deserializes from serialized UserSSOId
+-- You can use 'resolveAuthIdPartial' to resolve it to an 'AuthId'
+data AuthIdPartial
+  = AuthSAMLPartial SAML.UserRef AuthId
+  | AuthSCIMPartial Email (TeamId -> AuthId)
+  | AuthBothPartial SAML.UserRef Email (TeamId -> AuthId)
+  | AuthIdPartial AuthId
 
--- look here
-authIdFromUserSSOId :: MonadError String m => TeamId -> UserSSOId -> m AuthId
-authIdFromUserSSOId tid = \case
+instance FromJSON AuthIdPartial where
+  parseJSON v =
+    (AuthIdPartial <$> parseJSON v)
+      <|> ( do
+              ssoid :: UserSSOId <- parseJSON v
+              case ssoidToAuthIdPartial ssoid of
+                Left err -> fail err
+                Right authidPartial -> pure authidPartial
+          )
+
+resolveAuthIdPartial :: TeamId -> AuthIdPartial -> AuthId
+resolveAuthIdPartial tid = \case
+  AuthSAMLPartial _ authid -> authid
+  AuthSCIMPartial _ fromTeam -> fromTeam tid
+  AuthBothPartial _ _ fromTeam -> fromTeam tid
+  AuthIdPartial authid -> authid
+
+-- TODO: check if this is needed for legacy code?
+authIdPartialToUserSSOId :: AuthIdPartial -> UserSSOId
+authIdPartialToUserSSOId = \case
+  AuthSAMLPartial _ authid -> authIdToUserSSOId authid
+  AuthSCIMPartial email _ -> (UserScimExternalId . fromEmail) email
+  AuthBothPartial uref _ _ -> urefToUserSSOId uref
+  AuthIdPartial authid -> authIdToUserSSOId authid
+
+ssoidToAuthIdPartial :: MonadError String m => UserSSOId -> m AuthIdPartial
+ssoidToAuthIdPartial = \case
   UserSSOId tenant subject -> do
     uref <- parseUserRef tenant subject
     case urefToEmail uref of
-      Nothing -> pure $ AuthSAML uref
-      Just email -> pure $ AuthBoth tid uref (Just (EmailWithSource email EmailFromExternalIdField))
+      Nothing -> pure $ AuthSAMLPartial uref (AuthSAML uref)
+      Just email -> pure $ AuthBothPartial uref email (\tid -> AuthBoth tid uref (Just (EmailWithSource email EmailFromExternalIdField)))
   UserScimExternalId ext ->
     case parseEmail ext of
       Nothing -> throwError "externalId not an email and no issuer"
-      Just email -> pure $ emailAuth tid email
+      Just email -> pure $ AuthSCIMPartial email $ \tid -> emailAuth tid email
+  where
+    parseUserRef :: MonadError String m => Text -> Text -> m SAML.UserRef
+    parseUserRef tenant subject =
+      case (SAML.decodeElem $ cs tenant, SAML.decodeElem $ cs subject) of
+        (Right t, Right s) -> pure $ SAML.UserRef t s
+        (Left msg, _) -> throwError msg
+        (_, Left msg) -> throwError msg
+
+authIdFromUserSSOId :: MonadError String m => TeamId -> UserSSOId -> m AuthId
+authIdFromUserSSOId tid ssoid = do
+  authIdPartial <- ssoidToAuthIdPartial ssoid
+  pure $ resolveAuthIdPartial tid authIdPartial
 
 emailAuth :: TeamId -> Email -> AuthId
 emailAuth tid email = AuthSCIM (ScimDetails (ExternalId tid (fromEmail email)) (EmailWithSource email EmailFromExternalIdField))

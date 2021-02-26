@@ -11,11 +11,17 @@ module Brig.Types.SparAuthId
 where
 
 -- import Control.Lens
-import Data.Id
+
 -- import Data.String.Conversions (cs)
+
+-- import qualified Text.Email.Parser
+
+import Control.Lens ((^.))
+import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.:?), (.=))
+import Data.Aeson.Types (Pair)
+import Data.Id
 import Imports
 import qualified SAML2.WebSSO as SAML
--- import qualified Text.Email.Parser
 import Wire.API.User.Identity
 
 data AuthId
@@ -24,13 +30,76 @@ data AuthId
   | AuthBoth TeamId SAML.UserRef (Maybe EmailWithSource) -- userref and externalid are iso. Both DB indices (SAMLUserRef index and ExternalId index) are kept in sync
   deriving (Eq, Show)
 
+instance ToJSON AuthId where
+  toJSON authid =
+    object . (("is_auth_id" .= True) :) $
+      case authid of
+        AuthBoth tid uref mbEWS ->
+          [ "team" .= tid,
+            "email" .= (ewsEmail <$> mbEWS),
+            "email_source" .= (ewsEmailSource <$> mbEWS)
+          ]
+            <> urefPairs uref
+        AuthSCIM (ScimDetails (ExternalId tid extStr) (EmailWithSource email emailSource)) ->
+          [ "team" .= tid,
+            "external_id" .= extStr,
+            "email" .= email,
+            "email_source" .= emailSource
+          ]
+        AuthSAML uref -> urefPairs uref
+    where
+      urefPairs :: SAML.UserRef -> [Pair]
+      urefPairs uref =
+        [ "uref_tenant" .= (uref ^. SAML.uidTenant),
+          "uref_subject" .= (uref ^. SAML.uidSubject)
+        ]
+
+instance FromJSON AuthId where
+  parseJSON v =
+    assertIsAuthId v
+      >> ( parseBoth v
+             <|> parseSCIM v
+             <|> parseSAML v
+         )
+    where
+      parseBoth = withObject "AuthId object" $ \ob -> do
+        tid :: TeamId <- ob .: "team"
+        email :: Maybe Email <- ob .:? "email"
+        emailSource :: Maybe EmailSource <- ob .:? "email_source"
+        uref <- parseUref ob
+        pure $ AuthBoth tid uref (EmailWithSource <$> email <*> emailSource)
+
+      parseSCIM = withObject "AuthId object" $ \ob -> do
+        tid :: TeamId <- ob .: "team"
+        extStr :: Text <- ob .: "external_id"
+        email :: Email <- ob .: "email"
+        emailSource :: EmailSource <- ob .: "email_source"
+        pure $ AuthSCIM (ScimDetails (ExternalId tid extStr) (EmailWithSource email emailSource))
+
+      parseSAML =
+        withObject "AuthId object" $
+          fmap AuthSAML . parseUref
+
+      parseUref ob = do
+        SAML.UserRef <$> (ob .: "uref_tenant") <*> (ob .: "uref_subject")
+
+      assertIsAuthId = withObject "ob" $ \ob -> do
+        isAuthId <- ob .: "is_auth_id"
+        if isAuthId
+          then pure ()
+          else fail "is_auth_id key is not set to \"true\""
+
 data EmailWithSource = EmailWithSource {ewsEmail :: Email, ewsEmailSource :: EmailSource}
   deriving (Eq, Show)
 
 data EmailSource
   = EmailFromExternalIdField
   | EmailFromEmailField
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+
+instance ToJSON EmailSource
+
+instance FromJSON EmailSource
 
 data ExternalId
   = ExternalId TeamId Text
