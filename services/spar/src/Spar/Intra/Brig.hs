@@ -21,6 +21,7 @@
 module Spar.Intra.Brig
   ( authIdToUserSSOId,
     urefToExternalId,
+    parseUserRef,
     urefToEmail,
     authIdFromBrigUser,
     authIdFromUserSSOId,
@@ -94,23 +95,26 @@ authIdToUserSSOId = runAuthId urefToUserSSOId (UserScimExternalId . fromEmail)
 urefToUserSSOId :: SAML.UserRef -> UserSSOId
 urefToUserSSOId (SAML.UserRef t s) = UserSSOId (cs $ SAML.encodeElem t) (cs $ SAML.encodeElem s)
 
+-- Can be used create AuthId without a TeamId
+parseUserRef :: MonadError String m => Text -> Text -> m SAML.UserRef
+parseUserRef tenant subject =
+  case (SAML.decodeElem $ cs tenant, SAML.decodeElem $ cs subject) of
+    (Right t, Right s) -> pure $ SAML.UserRef t s
+    (Left msg, _) -> throwError msg
+    (_, Left msg) -> throwError msg
+
+-- look here
 authIdFromUserSSOId :: MonadError String m => TeamId -> UserSSOId -> m AuthId
 authIdFromUserSSOId tid = \case
-  UserSSOId tenant subject ->
-    case (SAML.decodeElem $ cs tenant, SAML.decodeElem $ cs subject) of
-      (Right t, Right s) -> do
-        let uref = SAML.UserRef t s
-        case urefToEmail uref of
-          Nothing -> pure $ AuthSAML uref
-          Just email -> pure $ AuthBoth tid uref (Just (EmailWithSource email EmailFromExternalIdField))
-      (Left msg, _) -> throwError msg
-      (_, Left msg) -> throwError msg
-  UserScimExternalId email ->
-    maybe
-      -- TODO: how to handle this? With a separate constur
-      (throwError "externalId not an email and no issuer")
-      (pure . emailAuth tid)
-      (parseEmail email)
+  UserSSOId tenant subject -> do
+    uref <- parseUserRef tenant subject
+    case urefToEmail uref of
+      Nothing -> pure $ AuthSAML uref
+      Just email -> pure $ AuthBoth tid uref (Just (EmailWithSource email EmailFromExternalIdField))
+  UserScimExternalId ext ->
+    case parseEmail ext of
+      Nothing -> throwError "externalId not an email and no issuer"
+      Just email -> pure $ emailAuth tid email
 
 emailAuth :: TeamId -> Email -> AuthId
 emailAuth tid email = AuthSCIM (ScimDetails (ExternalId tid (fromEmail email)) (EmailWithSource email EmailFromExternalIdField))
