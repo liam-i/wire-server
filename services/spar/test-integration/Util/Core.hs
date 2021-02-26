@@ -1123,9 +1123,9 @@ callDeleteDefaultSsoCode sparreq_ = do
 -- helpers talking to spar's cassandra directly
 
 -- | Look up 'UserId' under 'UserSSOId' on spar's cassandra directly.
-ssoToUidSpar :: (HasCallStack, MonadIO m, MonadReader TestEnv m) => Brig.UserSSOId -> m (Maybe UserId)
-ssoToUidSpar ssoid = do
-  authId <- either (error . ("could not parse brig sso_id: " <>)) pure $ Intra.authIdFromUserSSOId ssoid
+ssoToUidSpar :: (HasCallStack, MonadIO m, MonadReader TestEnv m) => TeamId -> Brig.UserSSOId -> m (Maybe UserId)
+ssoToUidSpar tid ssoid = do
+  authId <- either (error . ("could not parse brig sso_id: " <>)) pure $ Intra.authIdFromUserSSOId tid ssoid
   runSparCass @Client $
     runAuthId
       Data.getSAMLUser

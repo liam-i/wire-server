@@ -55,6 +55,8 @@ module Spar.Scim.Types
     SparAuthId.authIdSCIMEmail,
     SparAuthId.runAuthId,
     SparAuthId.authIdUref,
+    SparAuthId.EmailSource (..),
+    SparAuthId.EmailWithSource (..),
     scimActiveFlagFromAccountStatus,
     scimActiveFlagToAccountStatus,
     ScimUserExtra (..),

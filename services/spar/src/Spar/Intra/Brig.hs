@@ -62,6 +62,7 @@ where
 
 import Bilge
 import Brig.Types.Intra
+import Brig.Types.SparAuthId (ExternalId (..), ScimDetails (..))
 import Brig.Types.User
 import Brig.Types.User.Auth (SsoLogin (..))
 import Control.Lens
@@ -78,7 +79,7 @@ import qualified Network.Wai.Utilities.Error as Wai
 import qualified SAML2.WebSSO as SAML
 import Spar.Error
 import Spar.Intra.Galley as Galley (MonadSparToGalley, assertHasPermission, assertIsTeamOwner)
-import Spar.Scim.Types (AuthId (..), runAuthId)
+import Spar.Scim.Types (AuthId (..), EmailSource (..), EmailWithSource (..), runAuthId)
 import qualified System.Logger.Class as Log
 import qualified Text.Email.Parser
 import Web.Cookie
@@ -93,22 +94,26 @@ authIdToUserSSOId = runAuthId urefToUserSSOId (UserScimExternalId . fromEmail)
 urefToUserSSOId :: SAML.UserRef -> UserSSOId
 urefToUserSSOId (SAML.UserRef t s) = UserSSOId (cs $ SAML.encodeElem t) (cs $ SAML.encodeElem s)
 
-authIdFromUserSSOId :: MonadError String m => UserSSOId -> m AuthId
-authIdFromUserSSOId = \case
+authIdFromUserSSOId :: MonadError String m => TeamId -> UserSSOId -> m AuthId
+authIdFromUserSSOId tid = \case
   UserSSOId tenant subject ->
     case (SAML.decodeElem $ cs tenant, SAML.decodeElem $ cs subject) of
       (Right t, Right s) -> do
         let uref = SAML.UserRef t s
         case urefToEmail uref of
           Nothing -> pure $ AuthSAML uref
-          Just _email -> error "pure $ EmailAndUref email uref"
+          Just email -> pure $ AuthBoth tid uref (Just (EmailWithSource email EmailFromExternalIdField))
       (Left msg, _) -> throwError msg
       (_, Left msg) -> throwError msg
   UserScimExternalId email ->
     maybe
+      -- TODO: how to handle this? With a separate constur
       (throwError "externalId not an email and no issuer")
-      (pure . error "EmailOnly")
+      (pure . emailAuth tid)
       (parseEmail email)
+
+emailAuth :: TeamId -> Email -> AuthId
+emailAuth tid email = AuthSCIM (ScimDetails (ExternalId tid (fromEmail email)) (EmailWithSource email EmailFromExternalIdField))
 
 urefToExternalId :: SAML.UserRef -> Maybe Text
 urefToExternalId = SAML.shortShowNameID . view SAML.uidSubject
@@ -127,11 +132,15 @@ urefToEmail uref = case uref ^. SAML.uidSubject . SAML.nameID of
 -- settings and is now onboarded to saml/scim.  If this case can safely be ruled out, it's ok
 -- to just set it to 'Nothing'.
 authIdFromBrigUser :: MonadError String m => User -> Maybe SAML.Issuer -> m AuthId
-authIdFromBrigUser usr mIssuer = case (userSSOId usr, userEmail usr, mIssuer) of
-  (Just ssoid, _, _) -> authIdFromUserSSOId ssoid
-  (Nothing, Just email, Just issuer) -> pure $ error "EmailAndUref" email (SAML.UserRef issuer (emailToSAMLNameID email))
-  (Nothing, Just email, Nothing) -> pure $ error "EmailOnly" email
-  (Nothing, Nothing, _) -> throwError "user has neither ssoIdentity nor userEmail"
+authIdFromBrigUser usr mIssuer = case (userTeam usr, userSSOId usr, userEmail usr, mIssuer) of
+  (Nothing, _, _, _) -> throwError "user does not have a team"
+  (Just tid, Just ssoid, _, _) -> authIdFromUserSSOId tid ssoid
+  (Just tid, Nothing, Just email, Just issuer) ->
+    let uref = SAML.UserRef issuer (emailToSAMLNameID email)
+        ews = EmailWithSource email EmailFromExternalIdField
+     in pure $ AuthBoth tid uref (Just ews)
+  (Just tid, Nothing, Just email, Nothing) -> pure $ emailAuth tid email
+  (_, Nothing, Nothing, _) -> throwError "user has neither ssoIdentity nor userEmail"
 
 -- | Take a maybe text, construct a 'Name' from what we have in a scim user.  If the text
 -- isn't present, use an email address or a saml subject (usually also an email address).  If

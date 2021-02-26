@@ -6,12 +6,11 @@ module Brig.Types.SparAuthId
     ExternalId (..),
     runAuthId,
     authIdUref,
-    authIdExternalId,
     authIdSCIMEmail,
   )
 where
 
-import Control.Lens
+-- import Control.Lens
 import Data.Id
 -- import Data.String.Conversions (cs)
 import Imports
@@ -54,15 +53,18 @@ authIdUref =
     AuthSCIM _ -> Nothing
     AuthBoth _ uref _ -> Just uref
 
-authIdExternalId :: AuthId -> Maybe ExternalId
-authIdExternalId =
-  \case
-    AuthSAML _ -> Nothing
-    AuthSCIM (ScimDetails extId _) -> Just extId
-    AuthBoth tid uref _ -> ExternalId tid <$> urefToExternalId uref
-  where
-    urefToExternalId :: SAML.UserRef -> Maybe Text
-    urefToExternalId = SAML.shortShowNameID . view SAML.uidSubject
+-- TODO: remove if this is not needed
+-- authIdExternalId :: AuthId -> Maybe ExternalId
+-- authIdExternalId =
+--   \case
+--     AuthSAML _ -> Nothing
+--     AuthSCIM (ScimDetails extId _) -> Just extId
+--     AuthBoth tid uref _ ->
+--       -- TODO : also try EmailWithSource?
+--       ExternalId tid <$> urefToExternalId uref
+--   where
+--     urefToExternalId :: SAML.UserRef -> Maybe Text
+--     urefToExternalId = SAML.shortShowNameID . view SAML.uidSubject
 
 authIdSCIMEmail :: AuthId -> Maybe Email
 authIdSCIMEmail = fmap ewsEmail . authIdSCIMEmailWithSource
@@ -74,7 +76,7 @@ authIdSCIMEmailWithSource =
     AuthSCIM (ScimDetails _ ews) -> Just ews
     AuthBoth _ _ mbEws -> mbEws
 
--- TODO: Do we need this?
+-- TODO: remove this if not needed
 -- authIdEmail :: AuthId -> Maybe Email
 -- authIdEmail =
 --   \case

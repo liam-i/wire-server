@@ -274,7 +274,7 @@ testDeleteTeam = it "cleans up all the right tables after deletion" $ do
     liftIO $ tokens `shouldBe` []
   -- The users from 'user':
   do
-    mbUser1 <- case authIdFromUserSSOId ssoid1 of
+    mbUser1 <- case authIdFromUserSSOId tid ssoid1 of
       Right authId ->
         runSparCass $
           runAuthId
@@ -284,7 +284,7 @@ testDeleteTeam = it "cleans up all the right tables after deletion" $ do
       Left _email -> undefined -- runSparCass . Data.lookupScimExternalId . fromEmail $ _email
     liftIO $ mbUser1 `shouldBe` Nothing
   do
-    mbUser2 <- case authIdFromUserSSOId ssoid2 of
+    mbUser2 <- case authIdFromUserSSOId tid ssoid2 of
       Right authId ->
         runSparCass $
           runAuthId
