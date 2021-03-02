@@ -10,13 +10,10 @@ module Brig.Types.SparAuthId
   )
 where
 
--- import Control.Lens
-
--- import Data.String.Conversions (cs)
-
--- import qualified Text.Email.Parser
-
 import Control.Lens ((^.))
+-- import Control.Lens
+-- import Data.String.Conversions (cs)
+-- import qualified Text.Email.Parser
 import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.:?), (.=))
 import Data.Aeson.Types (Pair)
 import Data.Id
