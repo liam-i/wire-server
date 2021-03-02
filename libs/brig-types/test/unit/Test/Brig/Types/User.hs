@@ -28,6 +28,7 @@
 module Test.Brig.Types.User where
 
 import Brig.Types.Intra (NewUserScimInvitation (..), ReAuthUser (..))
+import Brig.Types.SparAuthId (AuthId (..))
 import Brig.Types.User (ManagedByUpdate (..), RichInfoUpdate (..))
 import Imports
 import Test.Brig.Roundtrip (testRoundTrip)
@@ -35,14 +36,15 @@ import Test.QuickCheck (Arbitrary (arbitrary))
 import Test.Tasty
 
 tests :: TestTree
-tests = testGroup "User (types vs. aeson)" $ roundtripTests
+tests = testGroup "User (types vs. aeson)" $ roundtripTests <> specialCases
 
 roundtripTests :: [TestTree]
 roundtripTests =
-  [ testRoundTrip @ManagedByUpdate,
+  [ testRoundTrip @AuthId,
+    testRoundTrip @ManagedByUpdate,
+    testRoundTrip @NewUserScimInvitation,
     testRoundTrip @ReAuthUser,
-    testRoundTrip @RichInfoUpdate,
-    testRoundTrip @NewUserScimInvitation
+    testRoundTrip @RichInfoUpdate
   ]
 
 instance Arbitrary ManagedByUpdate where
@@ -56,3 +58,18 @@ instance Arbitrary ReAuthUser where
 
 instance Arbitrary NewUserScimInvitation where
   arbitrary = NewUserScimInvitation <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+
+specialCases :: [TestTree]
+specialCases =
+  [ testCase "parse (removed UserSSOId) as LegacyAuthId" _
+  ]
+
+-- UserSSOId
+
+vals =
+  [ UserSSOId "https://example.com/a6ce4950-7b4c-11eb-b572-bfe2f05ec462" "user@example.com",
+    UserScimExternalId "user@example.com"
+  ]
+
+-- TODO: what else to test from SparAuthId?  other types?  functions?
+-- TODO: are there any undefineds left in the SparAuthId module?  have they not been caught by the tests?
