@@ -87,13 +87,16 @@ newtype LegacyAuthId = LegacyAuthId {fromLegacyAuthId :: TeamId -> AuthId}
 -- sync: if both exist and identify the same user, they do so via those `spar.user` and
 -- `spar.scim_external`.)
 --
+-- The 'Nothing' case can occur if the 'NameID' has unsupported qualifiers.
+--
 -- (The 'TeamId' could be inferred from the saml issuer, but that would be a database lookup,
--- which would make the function non-total.)
+-- which would make the function even less total.)
 urefToExternalId :: TeamId -> SAML.UserRef -> Maybe ExternalId
 urefToExternalId tid uref = ExternalId tid <$> SAML.shortShowNameID (uref ^. SAML.uidSubject)
 
--- | See 'userRefToExternalId'.
-externalIdToUref :: ExternalId -> SAML.UserRef
+-- | See 'userRefToExternalId'.  'NameID' format is either email (if parseable) or unspecified
+-- (if not).
+externalIdToUref :: SAML.Issuer -> ExternalId -> SAML.UserRef
 externalIdToUref = undefined
 
 -- | Internal; only needed for aeson instances.
@@ -180,7 +183,7 @@ instance FromJSON LegacyAuthId where
             pure . LegacyAuthId $
               (\_ -> AuthSAML (SAML.UserRef tenant subject))
           (Nothing, Nothing, Just eid) -> do
-            email <- undefined
+            email <- error "parseEmail" eid
             pure . LegacyAuthId $
               (\tid -> AuthSCIM (ScimDetails (ExternalId tid eid) (EmailWithSource email EmailFromExternalIdField)))
           _ -> do
@@ -201,17 +204,15 @@ authIdUref :: AuthId -> Maybe SAML.UserRef
 authIdUref = runAuthId (Just . id) (const Nothing)
 
 authIdExternalId :: AuthId -> Maybe ExternalId
-authIdExternalId =
-  \case
-    AuthSAML _ -> Nothing
-    AuthSCIM (ScimDetails extId _) -> Just extId
-    AuthBoth tid uref _ -> urefToExternalId tid uref
+authIdExternalId = \case
+  AuthSAML _ -> Nothing
+  AuthSCIM (ScimDetails extId _) -> Just extId
+  AuthBoth tid uref _ -> urefToExternalId tid uref
 
 authIdEmail :: AuthId -> Maybe Email
-authIdEmail =
-  \case
-    AuthSAML uref -> urefToEmail uref
-    other -> authIdScimEmail other
+authIdEmail = \case
+  AuthSAML uref -> urefToEmail uref
+  other -> authIdScimEmail other
   where
     urefToEmail :: SAML.UserRef -> Maybe Email
     urefToEmail uref = case uref ^. SAML.uidSubject . SAML.nameID of

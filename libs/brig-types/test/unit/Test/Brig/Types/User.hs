@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -28,12 +27,19 @@
 module Test.Brig.Types.User where
 
 import Brig.Types.Intra (NewUserScimInvitation (..), ReAuthUser (..))
-import Brig.Types.SparAuthId (AuthId (..))
+import Brig.Types.SparAuthId
 import Brig.Types.User (ManagedByUpdate (..), RichInfoUpdate (..))
+import qualified Data.Aeson as Aeson
+import Data.Id
+import Data.String.Conversions (cs)
 import Imports
+import SAML2.WebSSO as SAML
 import Test.Brig.Roundtrip (testRoundTrip)
 import Test.QuickCheck (Arbitrary (arbitrary))
 import Test.Tasty
+import Test.Tasty.HUnit
+import URI.ByteString.QQ (uri)
+import qualified Wire.API.User.Identity as Identity
 
 tests :: TestTree
 tests = testGroup "User (types vs. aeson)" $ roundtripTests <> specialCases
@@ -47,28 +53,50 @@ roundtripTests =
     testRoundTrip @RichInfoUpdate
   ]
 
+instance Arbitrary AuthId where
+  arbitrary = undefined
+
 instance Arbitrary ManagedByUpdate where
   arbitrary = ManagedByUpdate <$> arbitrary
-
-instance Arbitrary RichInfoUpdate where
-  arbitrary = RichInfoUpdate <$> arbitrary
-
-instance Arbitrary ReAuthUser where
-  arbitrary = ReAuthUser <$> arbitrary
 
 instance Arbitrary NewUserScimInvitation where
   arbitrary = NewUserScimInvitation <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
 
+instance Arbitrary ReAuthUser where
+  arbitrary = ReAuthUser <$> arbitrary
+
+instance Arbitrary RichInfoUpdate where
+  arbitrary = RichInfoUpdate <$> arbitrary
+
 specialCases :: [TestTree]
 specialCases =
-  [ testCase "parse (removed UserSSOId) as LegacyAuthId" _
-  ]
+  [ testCase "parse legacy UserSSOId values as LegacyAuthId" $ do
+      let tid :: TeamId
+          tid = undefined ("b6e09060-7b73-11eb-af7f-9b48ef85f610" :: Text)
 
--- UserSSOId
+          samples :: [(LByteString, AuthId)]
+          samples =
+            [ ( -- Wire.API.User.Identity.UserSSOId "https://example.com/a6ce4950-7b4c-11eb-b572-bfe2f05ec462" "user@example.com"
+                "{\"subject\":\"user@example.com\",\"tenant\":\"https://example.com/a6ce4950-7b4c-11eb-b572-bfe2f05ec462\"}",
+                AuthSAML
+                  ( SAML.UserRef
+                      (SAML.Issuer [uri|https://example.com/a6ce4950-7b4c-11eb-b572-bfe2f05ec462|])
+                      (fromRight (error "impossible") (emailNameID "user@example.com"))
+                  )
+              ),
+              ( -- Wire.API.User.Identity.UserScimExternalId "user@example.com"
+                "{\"scim_external_id\":\"user@example.com\"}",
+                AuthSCIM
+                  ( ScimDetails
+                      (ExternalId tid "user@example.com")
+                      (EmailWithSource (fromJust $ Identity.parseEmail "user@example.com") EmailFromExternalIdField)
+                  )
+              )
+            ]
 
-vals =
-  [ UserSSOId "https://example.com/a6ce4950-7b4c-11eb-b572-bfe2f05ec462" "user@example.com",
-    UserScimExternalId "user@example.com"
+      forM_ samples $ \(input, want) -> do
+        let have = (fromLegacyAuthId . fromJust . Aeson.decode $ input) tid
+        assertEqual (cs input) want have
   ]
 
 -- TODO: what else to test from SparAuthId?  other types?  functions?
