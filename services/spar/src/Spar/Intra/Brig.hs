@@ -19,8 +19,7 @@
 
 -- | Client functions for interacting with the Brig API.
 module Spar.Intra.Brig
-  ( AuthIdPartial (..),
-    authIdToUserSSOId,
+  ( authIdToUserSSOId,
     urefToExternalId,
     urefToEmail,
     authIdFromBrigUser,
@@ -96,15 +95,6 @@ authIdToUserSSOId = runAuthId urefToUserSSOId (UserScimExternalId . fromEmail)
 
 urefToUserSSOId :: SAML.UserRef -> UserSSOId
 urefToUserSSOId (SAML.UserRef t s) = UserSSOId (cs $ SAML.encodeElem t) (cs $ SAML.encodeElem s)
-
--- | This type deserializes previously serialized UserSSOId values
--- You can use 'resolveAuthIdPartial' to resolve it to an 'AuthId'
--- FUTUREWORK: resolve all 'AuthIdPartial' to 'AuthId' in the DB and remove this type
-data AuthIdPartial
-  = AuthSAMLPartial SAML.UserRef AuthId
-  | AuthSCIMPartial Email (TeamId -> AuthId)
-  | AuthBothPartial SAML.UserRef Email (TeamId -> AuthId)
-  | AuthIdPartial AuthId
 
 instance FromJSON AuthIdPartial where
   parseJSON v =
